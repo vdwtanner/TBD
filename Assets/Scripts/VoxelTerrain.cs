@@ -1,26 +1,27 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 public class VoxelTerrain : MonoBehaviour
 {
 
     public ComputeShader shader;
-    public ComputeShader perlinNoise2D;
     public Material meshMaterial;
     public int chunkSize = 16;
     public int chunkGridWidth = 1;
     public int chunkGridHeight = 1;
     public int chunkGridDepth = 1;
-    public int seed = 0;
+    public int minTerrainHeight = 64;
+    public int heightMapMultiplier = 64;
+    public int cliffHeightCutoff = 16;
+    public int heightMapSeed = 0;
+    public int roughnessSeed = 0;
 
     private Dictionary<Vector3, VoxelChunk> chunkList;
 
     private Queue<VoxelChunk> generateQueue;
     private Queue<VoxelChunk> updateQueue;
-
-    // compute resources for chunk gen
-    private ComputeBuffer chunkGenBuffer;
 
     // compute resources for marching cubes
     private ComputeBuffer chunkBuffer;
@@ -28,7 +29,8 @@ public class VoxelTerrain : MonoBehaviour
     private ComputeBuffer edgeFlagBuffer;
     private ComputeBuffer triTableBuffer;
 
-    private ImprovedPerlinNoise perlin;
+    private PerlinNoise heightMap;
+    private PerlinNoise roughness;
 
     private bool shaderRunning = false;
     private bool perlinGenRunning = false;
@@ -44,8 +46,6 @@ public class VoxelTerrain : MonoBehaviour
         generateQueue = new Queue<VoxelChunk>();
         updateQueue = new Queue<VoxelChunk>();
 
-        chunkGenBuffer = new ComputeBuffer(bufferSize, 20);
-
         chunkBuffer = new ComputeBuffer(bufferSize, 20);
         vertBuffer = new ComputeBuffer(bufferSize * 15, 48);
 
@@ -54,8 +54,8 @@ public class VoxelTerrain : MonoBehaviour
         edgeFlagBuffer.SetData(cubeEdgeFlags);
         triTableBuffer.SetData(triangleConnectionTable);
 
-        perlin = new ImprovedPerlinNoise(seed);
-        perlin.LoadResourcesFor2DNoise();
+        heightMap = new PerlinNoise(heightMapSeed);
+        roughness = new PerlinNoise(roughnessSeed);
 
         Application.targetFrameRate = 90;
 
@@ -84,23 +84,23 @@ public class VoxelTerrain : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // if our shader is not running we can load the next update job on it.
+        if (!shaderRunning)
+        {
+            if (updateQueue.Count > 0)
+            {
+                //UnityEngine.Debug.Log("UpdateCount = " + updateQueue.Count);
+                VoxelChunk chunk = updateQueue.Dequeue();
+                StartCoroutine(RunMarchingCubesJob(chunk));
+            }
+        }
+
         if (!perlinGenRunning)
         {
             if (generateQueue.Count > 0)
             {
                 VoxelChunk chunk = generateQueue.Dequeue();
                 StartCoroutine(RunGenerateChunkJob(chunk));
-            }
-        }
-
-        // if our shader is not running we can load the next update job on it.
-        if (!shaderRunning)
-        {
-            if (updateQueue.Count > 0)
-            {
-                Debug.Log("UpdateCount = " + updateQueue.Count);
-                VoxelChunk chunk = updateQueue.Dequeue();
-                StartCoroutine(RunMarchingCubesJob(chunk));
             }
         }
     }
@@ -194,7 +194,6 @@ public class VoxelTerrain : MonoBehaviour
 
     void OnDestroy()
     {
-        chunkGenBuffer.Release();
         chunkBuffer.Release();
         vertBuffer.Release();
         edgeFlagBuffer.Release();
@@ -205,34 +204,19 @@ public class VoxelTerrain : MonoBehaviour
     {
         perlinGenRunning = true;
 
-        //chunkGenBuffer.SetData(chunk.voxelArr);
+        //Stopwatch watch = new Stopwatch();
+        //watch.Start();
 
-        perlinNoise2D.SetFloat("_PosX", chunk.chunkPosition.x);
-        perlinNoise2D.SetFloat("_PosY", chunk.chunkPosition.y);
-        perlinNoise2D.SetFloat("_PosZ", chunk.chunkPosition.z);
-        perlinNoise2D.SetInt("_Width", chunkSize);
-        perlinNoise2D.SetInt("_Height", chunkSize);
-        perlinNoise2D.SetInt("_TotalHeight", chunkSize*chunkGridHeight);
-        perlinNoise2D.SetFloat("_Frequency", 0.02f);
-        perlinNoise2D.SetFloat("_Lacunarity", 2.0f);
-        perlinNoise2D.SetFloat("_Gain", 0.5f);
-        perlinNoise2D.SetTexture(0, "_PermTable1D", perlin.GetPermutationTable1D());
-        perlinNoise2D.SetTexture(0, "_Gradient2D", perlin.GetGradient2D());
-        perlinNoise2D.SetBuffer(0, "_VoxelBuffer", chunkGenBuffer);
+        StartCoroutine(chunk.generate(heightMap, roughness, minTerrainHeight, heightMapMultiplier, cliffHeightCutoff));
 
-        int kernelHandle = perlinNoise2D.FindKernel("CSMain");
+        //watch.Stop();
 
-        perlinNoise2D.Dispatch(kernelHandle, chunkSize / 8, chunkSize / 8, chunkSize / 8);
+        //UnityEngine.Debug.Log("Chunk generation time = " + watch.ElapsedMilliseconds);
+
+        perlinGenRunning = false;
 
         yield return null;
 
-        chunkGenBuffer.GetData(chunk.voxelArr);
-        
-        perlinGenRunning = false;
-        chunk.generated = true;
-
-        StageForUpdate(chunk);
-        
     }
 
     IEnumerator RunMarchingCubesJob(VoxelChunk chunk)
@@ -242,7 +226,7 @@ public class VoxelTerrain : MonoBehaviour
         while (!chunk.generated)
             yield return null;
 
-        int kernelHandle = shader.FindKernel("CSMarchingCubes");
+        /*int kernelHandle = shader.FindKernel("CSMarchingCubes");
 
         int bufferSize = chunkSize * chunkSize * chunkSize;
 
@@ -264,14 +248,25 @@ public class VoxelTerrain : MonoBehaviour
         shader.SetInt("width", chunkSize);
         shader.SetInt("height", chunkSize);
         shader.SetInt("depth", chunkSize);
+
         shader.Dispatch(kernelHandle, chunkSize / 8, chunkSize / 8, chunkSize / 8);
 
-        yield return null;
+        //yield return null;
 
         VertexOut[] verts = new VertexOut[bufferSize * 15];
         vertBuffer.GetData(verts);
 
-        StartCoroutine(chunk.UpdateMesh(verts, bufferSize * 15));
+        StartCoroutine(chunk.UpdateMesh(verts, bufferSize * 15));*/
+
+        //Stopwatch watch = new Stopwatch();
+        //watch.Start();
+
+        chunk.polygonize(1.0f);
+
+        //watch.Stop();
+
+        //UnityEngine.Debug.Log("Marching Cubes time = " + watch.ElapsedMilliseconds);
+
 
         shaderRunning = false;
     }
