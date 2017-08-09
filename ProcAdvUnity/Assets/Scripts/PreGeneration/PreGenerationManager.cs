@@ -2,14 +2,13 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class GenerationManager : MonoBehaviour {
+public class PreGenerationManager : MonoBehaviour {
     public int seed = 0;
 
     protected BiomeGenerator m_biomeGenerator;
     protected CityStateGenerator m_cityStateGenerator;
-    protected TerrainGenerator m_terrainGenerator;
 
-    private static GenerationManager s_instance;
+    private static PreGenerationManager s_instance;
 
     void Awake() {
         s_instance = this;
@@ -25,7 +24,7 @@ public class GenerationManager : MonoBehaviour {
 		
 	}
 
-    static GenerationManager GetInstance() {
+    static PreGenerationManager GetInstance() {
         return s_instance;
     }
 }
