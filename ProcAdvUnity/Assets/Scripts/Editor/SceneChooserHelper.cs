@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-//using System.IO;
 
 public class SceneChooserHelper : MonoBehaviour {
 	static string path = "";
@@ -16,21 +15,24 @@ public class SceneChooserHelper : MonoBehaviour {
 		if(newPath != "")
 		{
 			path = newPath;
-			bool update = EditorUtility.DisplayDialog("Update Scene Chooser", "Would you like to update Scene list from\n" + path, "kthxbai", "plzno");
-			if (update)
-			{
-				UpdateListing();
-			}
+			UpdateListing();
 		}
 	}
 
 	[MenuItem("Utils/Scenes/Update Scene Listing")]
 	static void UpdateListing()
 	{
+		if(path == "")
+		{
+			if(EditorUtility.DisplayDialog("NEEDZ PATH", "No path to scenes found. Choose one now?", "Sure", "Nah"))
+			{
+				SetSceneDir();
+			}
+			return;
+		}
 		sceneChooserScriptPath = Application.dataPath + "/Scripts/Editor/SceneChooser.cs";
-		EditorUtility.DisplayDialog("Did things", sceneChooserScriptPath, "qule");
 		string[] allFiles = System.IO.Directory.GetFiles(path, "*.unity", System.IO.SearchOption.AllDirectories);
-		string output = "using System.Collections;\nusing System.Collections.Generic;\nusing UnityEngine;\nusing UnityEditor;\nusing UnityEditor.SceneManagement;\n\npublic class SceneChooser : MonoBehaviour{";
+		string output = "\nusing UnityEngine;\nusing UnityEditor;\nusing UnityEditor.SceneManagement;\n\npublic class SceneChooser : MonoBehaviour{";
 		foreach(string file in allFiles)
 		{
 			string menuItemName = file.Replace(path, "").Replace("\\", "/");
@@ -46,5 +48,6 @@ public class SceneChooserHelper : MonoBehaviour {
 		output += "\n}";
 		System.IO.File.WriteAllText(sceneChooserScriptPath, output);
 		AssetDatabase.Refresh();
+		EditorUtility.DisplayDialog("U CAN HAS SCENE SELECSHUN", "All Done!", "Thank you, benevolent script!");
 	}
 }
