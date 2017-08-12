@@ -4,14 +4,23 @@ using UnityEngine;
 
 public class PreGenerationManager : MonoBehaviour {
     public int seed = 0;
+	[Range(10, 25)]
+	public int numResourceNodesPerCell = 10;
+	//Width and height in generationCells
+	[Range(1, 10)]
+	public int size = 1;
 
-    protected BiomeGenerator m_biomeGenerator;
+	protected ResourceGenerator m_resourceGenerator;
     protected CityStateGenerator m_cityStateGenerator;
 
-    private static PreGenerationManager s_instance;
+    public static PreGenerationManager Instance { get { return s_instance; } }
 
-    void Awake() {
-        s_instance = this;
+	protected static PreGenerationManager s_instance;
+
+	void Awake() {
+		s_instance = this;
+		m_resourceGenerator = new ResourceGenerator(numResourceNodesPerCell);
+		
     }
 
 	// Use this for initialization
@@ -25,6 +34,11 @@ public class PreGenerationManager : MonoBehaviour {
 	}
 
     static PreGenerationManager GetInstance() {
-        return s_instance;
+        return Instance;
     }
+
+	void Generate()
+	{
+		m_resourceGenerator.Generate();
+	}
 }
